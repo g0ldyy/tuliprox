@@ -57,13 +57,19 @@ impl ProviderStreamFactoryOptions {
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
         // we need the range bytes from client request for seek ing to the right position
         let mut range_start_bytes = get_request_range_start_bytes(&req_headers);
+        let had_range_header = req_headers.contains_key(axum::http::header::RANGE.as_str());
         req_headers.remove("range");
 
-        // For timeshift streams, force Range header to start from beginning to avoid downloading entire file
-        // Timeshift URLs typically contain "/timeshift/" in the path
+        // For timeshift streams, only force Range header if the client is actually seeking (not first request)
+        // This allows first request to get 200 OK with full content-length, subsequent seeks get 206 Partial Content
         if range_start_bytes.is_none() && stream_url.path().contains("/timeshift/") {
-            debug!("Detected timeshift stream, forcing range request from beginning: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
-            range_start_bytes = Some(0);
+            // Check if this looks like a seek request from the client (had range header originally)
+            if had_range_header {
+                debug!("Detected timeshift seek request, forcing range request from beginning: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
+                range_start_bytes = Some(0);
+            } else {
+                debug!("Detected timeshift initial request, allowing full response for content-length: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
+            }
         }
 
         // We merge configured input headers with the headers from the request.
