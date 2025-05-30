@@ -255,7 +255,16 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                         debug!("{}", sanitize_sensitive_info(&message));
                     }
 
-                    let response_headers: Vec<(String, String)> = get_response_headers(response.headers());
+                    let mut response_headers: Vec<(String, String)> = get_response_headers(response.headers());
+                    
+                    // Fix accept-ranges header for timeshift - should be "bytes" not a range
+                    if stream_options.get_url().path().contains("/timeshift/") {
+                        if let Some(pos) = response_headers.iter().position(|(k, v)| k == "accept-ranges" && v != "bytes" && v != "none") {
+                            debug!("Fixing non-standard accept-ranges header for timeshift: {} -> bytes", response_headers[pos].1);
+                            response_headers[pos].1 = "bytes".to_string();
+                        }
+                    }
+                    
                     //let url = stream_options.get_url();
                     // debug!("First  headers {headers:?} {} {}", sanitize_sensitive_info(url.as_str()));
                     Some((response_headers, response.status()))
