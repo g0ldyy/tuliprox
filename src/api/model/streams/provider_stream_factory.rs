@@ -56,8 +56,15 @@ impl ProviderStreamFactoryOptions {
         let filter_header = get_header_filter_for_item_type(item_type);
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
         // we need the range bytes from client request for seek ing to the right position
-        let range_start_bytes = get_request_range_start_bytes(&req_headers);
+        let mut range_start_bytes = get_request_range_start_bytes(&req_headers);
         req_headers.remove("range");
+
+        // For timeshift streams, force Range header to start from beginning to avoid downloading entire file
+        // Timeshift URLs typically contain "/timeshift/" in the path
+        if range_start_bytes.is_none() && stream_url.path().contains("/timeshift/") {
+            debug!("Detected timeshift stream, forcing range request from beginning: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
+            range_start_bytes = Some(0);
+        }
 
         // We merge configured input headers with the headers from the request.
         let headers = get_request_headers(input_headers, Some(&req_headers));
