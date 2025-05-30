@@ -60,16 +60,15 @@ impl ProviderStreamFactoryOptions {
         let had_range_header = req_headers.contains_key(axum::http::header::RANGE.as_str());
         req_headers.remove("range");
 
-        // For timeshift streams, only force Range header if the client is actually seeking (not first request)
-        // This allows first request to get 200 OK with full content-length, subsequent seeks get 206 Partial Content
+        // For timeshift streams, ALWAYS force Range header to avoid downloading entire file
+        // We'll handle the client headers properly in the response to make it look like a normal response
         if range_start_bytes.is_none() && stream_url.path().contains("/timeshift/") {
-            // Check if this looks like a seek request from the client (had range header originally)
             if had_range_header {
-                debug!("Detected timeshift seek request, forcing range request from beginning: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
-                range_start_bytes = Some(0);
+                debug!("Detected timeshift with range request, forcing range request from beginning: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
             } else {
-                debug!("Detected timeshift initial request, allowing full response for content-length: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
+                debug!("Detected timeshift initial request, forcing range request to avoid full download: {}", crate::utils::request::sanitize_sensitive_info(stream_url.as_str()));
             }
+            range_start_bytes = Some(0);
         }
 
         // We merge configured input headers with the headers from the request.
@@ -269,11 +268,35 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                             debug!("Fixing non-standard accept-ranges header for timeshift: {} -> bytes", response_headers[pos].1);
                             response_headers[pos].1 = "bytes".to_string();
                         }
+                        
+                        // For timeshift, if we got 206 from forced range=0-, convert to look like 200 OK
+                        // Extract total size from content-range and use it as content-length
+                        if status == StatusCode::PARTIAL_CONTENT {
+                            if let Some(content_range_pos) = response_headers.iter().position(|(k, _)| k == "content-range") {
+                                let content_range = &response_headers[content_range_pos].1;
+                                // Parse "bytes 0-xxxxx/total" to extract total
+                                if let Some(total_size) = content_range.split('/').last() {
+                                    // Update content-length to total size
+                                    if let Some(content_length_pos) = response_headers.iter().position(|(k, _)| k == "content-length") {
+                                        debug!("Converting timeshift 206 to 200: setting content-length to total size {}", total_size);
+                                        response_headers[content_length_pos].1 = total_size.to_string();
+                                    }
+                                    // Remove content-range header as we're pretending it's a full response
+                                    response_headers.retain(|(k, _)| k != "content-range");
+                                }
+                            }
+                        }
                     }
                     
                     //let url = stream_options.get_url();
                     // debug!("First  headers {headers:?} {} {}", sanitize_sensitive_info(url.as_str()));
-                    Some((response_headers, response.status()))
+                    // Always return 200 OK for timeshift to make clients happy
+                    let response_status = if stream_options.get_url().path().contains("/timeshift/") && status == StatusCode::PARTIAL_CONTENT {
+                        StatusCode::OK
+                    } else {
+                        status
+                    };
+                    Some((response_headers, response_status))
                 };
 
                 let provider_stream = response.bytes_stream().map_err(|err| {
