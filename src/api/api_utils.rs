@@ -652,7 +652,7 @@ pub async fn stream_response(app_state: &AppState,
             }
 
             if let Some(provider) = provider_name {
-                if matches!(item_type, PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series) {
+                if matches!(item_type, PlaylistItemType::Live | PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series) {
                     if let Some(token) = app_state.active_users.create_user_session(user, virtual_id, &provider, stream_url, connection_permission).await {
                         response = response.header(axum::http::header::SET_COOKIE, create_session_cookie(token));
                     }
