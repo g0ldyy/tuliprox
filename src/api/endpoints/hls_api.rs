@@ -126,8 +126,7 @@ async fn hls_api_stream(
 
         session.stream_url = hls_url;
         if session.virtual_id == virtual_id {
-            if is_seek_request(XtreamCluster::Live, &req_headers).await {
-                // partial request means we are in reverse proxy mode, seek happened
+            if is_seek_request(XtreamCluster::Live, &req_headers, None).await {
                 return force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, input, &user).await.into_response()
             }
         } else {

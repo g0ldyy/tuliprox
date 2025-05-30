@@ -98,7 +98,7 @@ async fn m3u_api_stream(
         if app_state.active_provider.is_over_limit(&session.provider).await {
             return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
-        if session.virtual_id == virtual_id  && is_seek_request(cluster, &req_headers).await {
+        if session.virtual_id == virtual_id  && is_seek_request(cluster, &req_headers, None).await {
             // partial request means we are in reverse proxy mode, seek happened
             return force_provider_stream_response(&app_state, session, pli.item_type, &req_headers, input, &user).await.into_response()
         }

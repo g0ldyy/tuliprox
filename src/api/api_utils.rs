@@ -824,10 +824,16 @@ pub fn redirect(url: &str) -> impl IntoResponse {
 pub async fn is_seek_request(
     cluster: XtreamCluster,
     req_headers: &HeaderMap,
+    context: Option<XtreamApiStreamContext>,
 ) -> bool {
-    // seek only for non-live streams
+    // seek only for non-live streams, except for timeshift which should support partial requests
     if cluster == XtreamCluster::Live {
-        return false;
+        // Allow seek requests for timeshift even though they use Live cluster
+        if let Some(XtreamApiStreamContext::Timeshift) = context {
+            // Continue to check range headers for timeshift
+        } else {
+            return false;
+        }
     }
 
     // seek requests contains range header
@@ -844,7 +850,8 @@ pub async fn is_seek_request(
             return true;
         }
     }
-    false}
+    false
+}
 
 #[cfg(test)]
 mod tests {
